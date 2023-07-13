@@ -41,6 +41,8 @@ bool TurtleDriver::move_to_next_order(const bool& isFirst)
     
     if(m_currentOrder != m_orders.end())
     {
+        cout<<"Next order: "<< m_currentOrder->goalx << " " << m_currentOrder->goaly << " " << m_currentOrder->goaltheta << " " << m_currentOrder->speed << endl;
+
         TurtleOrderType orderType = evaluate_order_type(*m_currentOrder);
         if (orderType == TurtleOrderType::Linear)
         {
@@ -50,9 +52,11 @@ bool TurtleDriver::move_to_next_order(const bool& isFirst)
                 cout<<"Rotation order added: " << m_currentOrder->goaltheta << endl;
             }
         }
-    }
 
-    return true;
+        return true;
+    }
+    else
+        return false;
 }
 
 
@@ -90,7 +94,7 @@ bool TurtleDriver::read_order_file(const string& orderFile)
         values.pop_front();
         order.goaly = values.front();
         values.pop_front();
-        order.goaltheta = values.front();
+        order.goaltheta = M_PI * values.front() / 180;
         values.pop_front();
         order.speed = values.front();
 
@@ -111,9 +115,9 @@ bool TurtleDriver::is_goal_reached() const
     switch(orderType)
     {
     case TurtleOrderType::Linear:
-    case TurtleOrderType::Circular:
         isGoalReached = is_move_finished(*m_currentOrder);
         break;
+    case TurtleOrderType::Circular:
     case TurtleOrderType::Rotation:
         isGoalReached = is_rotation_finished(*m_currentOrder);
         break;
@@ -186,19 +190,38 @@ void TurtleDriver::pose_callback(const turtlesim::Pose::ConstPtr& msg)
     m_pose.x = msg->x;
     m_pose.y = msg->y;
     m_pose.headingAngle = msg->theta;
+
+    m_bIsPoseInitialized = true;
 }
 
 
 
 bool TurtleDriver::is_move_finished(const TurtleOrder& moveOrder) const
 {
-    float dx = moveOrder.goalx - m_pose.x;
-    float dy = moveOrder.goaly - m_pose.y;
-    float distance = sqrt(dx*dx + dy*dy);
+    float distance = calculate_distance_to_goal(m_pose.x, m_pose.y, moveOrder.goalx, moveOrder.goaly);
 
-    cout<<"x: "<<m_pose.x<<" y: "<<m_pose.y<<", gx: "<<moveOrder.goalx<<", gy: "<<moveOrder.goaly<<", d: "<<distance<<endl;
+    bool isPassedby = is_target_passed_by(m_pose.headingAngle, moveOrder.goalx, moveOrder.goaly, m_pose.x, m_pose.y);
 
-    if(distance < GOAL_REACHED_THRESHOLD)
+    if(distance < GOAL_REACHED_THRESHOLD || isPassedby == true)
+        return true;
+    else
+        return false;
+}
+
+
+
+bool TurtleDriver::is_target_passed_by(const float& headingAngle, const float& goalX, const float& goalY, const float& currX, const float& currY) const
+{
+    float headingX = cos(headingAngle);
+    float headingY = sin(headingAngle);
+
+    float dx = goalX - currX;
+    float dy = goalY - currY;
+
+    float dotProduct = headingX * dx + headingY * dy;
+    float angle = acos(dotProduct / (sqrt(dx*dx + dy*dy)));
+
+    if(abs(angle) >  M_PI_2)
         return true;
     else
         return false;
@@ -208,16 +231,60 @@ bool TurtleDriver::is_move_finished(const TurtleOrder& moveOrder) const
 
 bool TurtleDriver::is_rotation_finished(const TurtleOrder& rotationOrder) const
 {
-    float angleDiff = abs(rotationOrder.goaltheta - m_pose.headingAngle);
-    if(angleDiff > M_PI)
-        angleDiff = 2.0f*M_PI - angleDiff;
+    float angleDiff = calculate_angle_to_goal(m_pose.headingAngle, rotationOrder.goaltheta);
 
-    cout<<"theta: "<<m_pose.headingAngle<<", gtheta: "<<rotationOrder.goaltheta<<", diff: "<<angleDiff<<endl;
-
-    if(angleDiff < GOAL_REACHED_THRESHOLD)
+    if(abs(angleDiff) < ROTATION_THRESHOLD)
+    {
+        calculate_angle_to_goal(m_pose.headingAngle, rotationOrder.goaltheta, true);
+        cout<<"Rotation finished - theta: "<<m_pose.headingAngle<<", gtheta: "<<rotationOrder.goaltheta<<", diff: "<<angleDiff<<endl;
         return true;
+    }
     else
         return false;
+}
+
+
+
+
+float TurtleDriver::calculate_distance_to_goal(const float& currX, const float& currY, const float& goalX, const float& goalY) const
+{
+    float dx = goalX - currX;
+    float dy = goalY - currY;
+    float distance = sqrt(dx*dx + dy*dy);
+    return distance;
+}
+
+
+
+float TurtleDriver::calculate_angle_to_goal(const float& currAngle, const float& goalAngle, const bool& isVerbose) const
+{
+    /*float currX = cos(currAngle);
+    float currY = sin(currAngle);
+    float goalX = cos(goalAngle);
+    float goalY = sin(goalAngle);
+
+    float crossProduct = currX * goalY - currY * goalX;
+    float angle = asin(crossProduct);
+
+    if(isVerbose)
+    {
+        cout<<"curr angle: "<<currAngle<<"-> ["<<currX<<", "<<currY<<"], goal angle: "<<goalAngle<<"-> ["<<goalX<<", "<<goalY<<"], cross product: "<<crossProduct<<", asin: "<<angle<<endl;
+    }*/
+
+    float angle = goalAngle - currAngle;
+
+    if(isVerbose)
+        cout<<"curr angle: "<<currAngle<<", goal angle: "<<goalAngle<<", diff: "<<angle;
+
+    if(angle > M_PI)
+        angle -= 2 * M_PI;
+    else if(angle < -M_PI)
+        angle += 2 * M_PI;
+
+    if(isVerbose)
+        cout<<"modified: "<<angle<<endl;
+
+    return angle;
 }
 
 
@@ -226,7 +293,10 @@ VelocityCommand TurtleDriver::generate_linear_move_velocity_command(const Turtle
 {
     // Just move forward - direction is assumed as correct.
     VelocityCommand command;
-    command.vx = linearOrder.speed;
+
+    float distance = calculate_distance_to_goal(m_pose.x, m_pose.y, linearOrder.goalx, linearOrder.goaly);
+
+    command.vx = linearOrder.speed * distance;
     command.vy = 0.0f;
     command.az = 0.0f;
     return command;
@@ -241,14 +311,8 @@ VelocityCommand TurtleDriver::generate_rotation_velocity_command(const TurtleOrd
     command.vy = 0.0f;
 
     // If the angle is positive, rotate CCW
-    float angleDiff = rotationOrder.goaltheta - m_pose.headingAngle;
-    if(angleDiff > M_PI)
-        angleDiff = - (2.0f*M_PI - angleDiff); // Minus means CW
-
-    if(angleDiff > 0.0f)
-        command.az = rotationOrder.speed;
-    else
-        command.az = -rotationOrder.speed;
+    float angleDiff = calculate_angle_to_goal(m_pose.headingAngle, rotationOrder.goaltheta);
+    command.az = rotationOrder.speed*angleDiff;
 
     return command;
 }
@@ -258,20 +322,14 @@ VelocityCommand TurtleDriver::generate_rotation_velocity_command(const TurtleOrd
 VelocityCommand TurtleDriver::generate_circular_move_velocity_command(const TurtleOrder& circularOrder) const
 {
     VelocityCommand command;
-
-    float dx = circularOrder.goalx - m_pose.x;
-    float dy = circularOrder.goaly - m_pose.y;
-
-    float distance = sqrt(dx*dx + dy*dy);
-
-    float r = distance / (2.0f * sin(abs(circularOrder.goaltheta) / 2.0f));
-        command.vx = 2.0f*r; // Radius of the circle
-        command.vy = 0.0f;
-        
-        if(circularOrder.goaltheta > 0)
-            command.az = circularOrder.speed;
-        else
-            command.az = -circularOrder.speed;
+    
+    command.vx = circularOrder.goalx; // Radius of the circle
+    command.vy = 0.0f;
+    
+    if(circularOrder.goaly > 0)
+        command.az = 1;
+    else
+        command.az = -1;
 
     return command;
 }
@@ -285,20 +343,16 @@ bool TurtleDriver::is_rotation_required_for_linear_move(const TurtleOrder& linea
     float dy = linearOrder.goaly - m_pose.y;
 
     float angle = atan2(dy, dx);
-    if(angle < 0.0f)
-        angle += 2.0f*M_PI;
 
-    // tranlate pose theat to -pi to pi
-    float headingAngle = m_pose.headingAngle;
-    if(headingAngle < 0.0f)
-        headingAngle += 2.0f*M_PI;
+    float angleDiff = calculate_angle_to_goal(m_pose.headingAngle, angle);
 
-    float angleDiff = angle - headingAngle;
-    if (abs(angleDiff) > GOAL_REACHED_THRESHOLD)
+    cout<<"curr pos: ["<<m_pose.x<<", "<<m_pose.y<<"], angle: "<<angle<<", angleDiff: "<<angleDiff<<endl;
+
+    if (abs(angleDiff) > ROTATION_THRESHOLD)
     {
         TurtleOrder rotateOrder;
         rotateOrder.goaltheta = angle;
-        rotateOrder.speed = 0.01;
+        rotateOrder.speed = 1;
         add_order(rotateOrder);
         return true;
     }

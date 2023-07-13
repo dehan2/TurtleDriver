@@ -1,12 +1,15 @@
 #include "ros/ros.h"
 #include "turtlesim/Pose.h"
 #include "geometry_msgs/Twist.h"
+#include "std_msgs/Bool.h"
 #include "ConstForTurtleDriver.h"
 #include "TurtleDriver.h"
 #include <functional>
 #include <iostream>
 
 using namespace std;
+
+bool isStart = false;
 
 void publish_velocity_command(const ros::Publisher& pub, const VelocityCommand& command)
 {
@@ -15,6 +18,14 @@ void publish_velocity_command(const ros::Publisher& pub, const VelocityCommand& 
     velocity.linear.y = command.vy;
     velocity.angular.z = command.az;
     pub.publish(velocity);
+}
+
+
+
+void start_callback(const std_msgs::Bool::ConstPtr& msg)
+{
+    cout<<"Start order received: "<<msg->data <<endl;
+    isStart = msg->data;
 }
 
 
@@ -43,13 +54,22 @@ int main(int argc, char** argv)
 
 
     ros::Subscriber sub = n.subscribe("/turtle1/pose", 10, &TurtleDriver::pose_callback, &turtleDriver);
-
-    bool isOnMoving = false;
+    ros::Subscriber sub2 = n.subscribe("/driver_start", 10, &start_callback);
     ros::Publisher pub = n.advertise<geometry_msgs::Twist>("/turtle1/cmd_vel", 10);
 
-    turtleDriver.move_to_next_order(true);
+    ros::Rate loop_rate(50);
+    
+    while(ros::ok())
+    {
+        ros::spinOnce();
+        if(turtleDriver.is_pose_initialized() == true && isStart == true)
+        {
+            cout<<"Pose initialized: " << turtleDriver.get_pose().x <<", "<<turtleDriver.get_pose().y <<", "<<turtleDriver.get_pose().headingAngle <<endl;
+            break;
+        }
+    }
 
-    ros::Rate loop_rate(10);
+    turtleDriver.move_to_next_order(true);
 
     while(ros::ok())
     {
@@ -79,36 +99,6 @@ int main(int argc, char** argv)
         }
 
         loop_rate.sleep();
-
-
-        //cout<<"Pos: "<<turtleDriver.get_pose().x <<", "<<turtleDriver.get_pose().y <<", "<<turtleDriver.get_pose().headingAngle <<endl;
-
-        /*if(isOnMoving == true)
-        {
-            if(turtleDriver.is_goal_reached() == true)
-            {
-                cout<<"Goal reached." <<endl;
-
-                // Stop the turtle
-                publish_velocity_command(pub, VelocityCommand());
-                isOnMoving = false;
-
-                if(turtleDriver.move_to_next_order() == false)
-                {
-                    // If there is no next order, stop the node
-                    ROS_INFO("All orders are finished.");
-                    break;
-                }
-            }
-        }
-        else
-        {
-            VelocityCommand command = turtleDriver.generate_velocity_command_to_achieve_goal(*turtleDriver.get_current_order());
-            cout<<"Velocity command: "<<command.vx <<", "<<command.vy <<", "<<command.az <<endl;
-
-            publish_velocity_command(pub, command);
-            isOnMoving = true;
-        }*/
     }
 
     return 0;

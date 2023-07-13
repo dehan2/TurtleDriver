@@ -27,4 +27,5 @@ struct VelocityCommand
 
 enum class TurtleOrderType {None, Linear, Rotation, Circular};
 
-const float GOAL_REACHED_THRESHOLD = 0.001f;
+const float GOAL_REACHED_THRESHOLD = 0.1f;
+const float ROTATION_THRESHOLD = 0.0174f; // 1 degree

@@ -12,6 +12,7 @@ class TurtleDriver
 {
 private:
     TurtlePose m_pose;
+    bool m_bIsPoseInitialized = false;
 
     list<TurtleOrder> m_orders;
     list<TurtleOrder>::iterator m_currentOrder = m_orders.end();
@@ -31,6 +32,7 @@ public:
     const TurtlePose& get_pose() const {return m_pose;}
     const list<TurtleOrder>& get_orders() const {return m_orders;}
     list<TurtleOrder>::iterator get_current_order() {return m_currentOrder;}
+    const bool& is_pose_initialized() const {return m_bIsPoseInitialized;}
 
     void add_order(const TurtleOrder& order) {m_currentOrder = m_orders.insert(m_currentOrder, order);}
     void clear_orders() {m_orders.clear();}
@@ -50,9 +52,14 @@ public:
     void pose_callback(const turtlesim::Pose::ConstPtr& msg);
 
 private:
-    bool is_move_finished(const TurtleOrder& moveOrder) const; // Both for linear and circular move
+    bool is_move_finished(const TurtleOrder& moveOrder) const;
+    bool is_target_passed_by(const float& headingAngle, const float& goalX, const float& goalY, const float& currX, const float& currY) const;
+
     bool is_rotation_finished(const TurtleOrder& rotationOrder) const;
     
+    float calculate_distance_to_goal(const float& currX, const float& currY, const float& goalX, const float& goalY) const;
+    float calculate_angle_to_goal(const float& currAngle, const float& goalAngle, const bool& isVerbose = false) const;
+
     VelocityCommand generate_linear_move_velocity_command(const TurtleOrder& linearOrder) const;
     VelocityCommand generate_rotation_velocity_command(const TurtleOrder& rotationOrder) const;
     VelocityCommand generate_circular_move_velocity_command(const TurtleOrder& circularOrder) const;
